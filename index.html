@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站直播间点歌台 - 齐格飞的歌单</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="rivet top-left"></div>
+            <div class="rivet top-right"></div>
+            <div class="rivet bottom-left"></div>
+            <div class="rivet bottom-right"></div>
+            <div class="armor-plate"></div>
+            <div class="armor-plate right"></div>
+            <button class="theme-toggle" id="themeToggle" title="切换主题">🌙</button>
+            <div class="login-btn-wrapper">
+                <button class="login-btn" id="loginBtn" title="管理员登录"></button>
+            </div>
+            <h1>⚔️ 齐格飞的歌单</h1>
+            <p class="subtitle">选择您喜爱的歌曲，享受音乐时光</p>
+        </header>
+
+        <div class="search-filter">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜索歌名或歌手...">
+            </div>
+            <div class="filter-group">
+                <div class="filter-item">
+                    <label for="artistFilter">歌手分类</label>
+                    <div class="badge-select">
+                        <select id="artistFilter">
+                            <option value="">全部歌手</option>
+                        </select>
+                        <div class="sword-effect"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-indicator" id="adminIndicator" style="display: none;">
+            <span class="admin-badge">👑 管理员模式已启用</span>
+            <button class="btn btn-outline" id="logoutBtn" style="margin-left: auto;">🚪 退出管理员</button>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn btn-random" id="randomBtn">🎲 随机听听</button>
+            <button class="btn btn-secondary" id="clearBtn">🔄 重置筛选</button>
+            <button class="btn btn-primary admin-btn" id="addBtn">➕ 添加歌曲</button>
+            <button class="btn btn-secondary admin-btn" id="batchDeleteBtn">🗑️ 批量删除</button>
+            <button class="btn btn-outline admin-btn" id="undoBtn" style="display: none;">↩️ 撤销</button>
+
+            
+        </div>
+
+        <div class="batch-actions" id="batchActions" style="display: none;">
+            <label class="select-all" id="selectAllLabel">
+                <input type="checkbox" id="selectAll"> 全选
+            </label>
+            <span class="stats-text">已选择 <span class="stats-count" id="selectedCount">0</span> 首</span>
+            <button class="btn btn-delete" id="confirmDeleteBtn">确认删除</button>
+        </div>
+
+        <div class="stats-bar">
+            <span class="stats-text">当前歌单共 <span class="stats-count" id="songCount">0</span> 首歌曲</span>
+            <span class="stats-text">显示 <span class="stats-count" id="displayCount">0</span> 首</span>
+        </div>
+
+        <div class="playlist-container" id="playlistContainer">
+        </div>
+
+        <div class="toast" id="toast"></div>
+
+        <div class="modal-overlay" id="addModal">
+            <div class="modal">
+                <h2>添加新歌曲</h2>
+                <div class="form-group">
+                    <label for="newTitle">歌曲名称</label>
+                    <input type="text" id="newTitle" placeholder="请输入歌曲名称">
+                    <div class="error-message" id="titleError">请输入有效的歌曲名称（1-100个字符）</div>
+                </div>
+                <div class="form-group">
+                    <label for="newArtist">歌手</label>
+                    <input type="text" id="newArtist" placeholder="请输入歌手名称">
+                    <div class="error-message" id="artistError">请输入有效的歌手名称（1-100个字符）</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="cancelAddBtn">取消</button>
+                    <button class="btn btn-primary" id="confirmAddBtn">确认添加</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="password-modal-overlay" id="passwordModal">
+            <div class="password-modal">
+                <h2>🔐 管理员验证</h2>
+                <div class="form-group">
+                    <label for="passwordInput">请输入管理员密码</label>
+                    <input type="password" id="passwordInput" placeholder="请输入密码" autocomplete="off">
+                    <div class="error-message" id="passwordError">密码错误，请重试</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="cancelPasswordBtn">取消</button>
+                    <button class="btn btn-primary" id="confirmPasswordBtn">确认登录</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ADMIN_PASSWORD = 'kikixu+7';
+        let isAdmin = false;
+
+        function parseURLParams() {
+            const params = {};
+            const queryString = window.location.search.substring(1);
+            const pairs = queryString.split('&');
+            
+            for (let pair of pairs) {
+                const [key, value] = pair.split('=');
+                if (key && value) {
+                    params[key.toLowerCase()] = decodeURIComponent(value);
+                }
+            }
+            return params;
+        }
+
+        function validateAdminAccess() {
+            const params = parseURLParams();
+            const inputPassword = params['admin'] || '';
+            if (!inputPassword || !secureCompare(inputPassword, ADMIN_PASSWORD)) {
+                return false;
+            }
+            return true;
+        }
+
+        function checkAdminPermission() {
+            return isAdmin;
+        }
+
+        function getUserRole() {
+            return isAdmin ? 'admin' : 'user';
+        }
+
+        function enableAdminMode() {
+            if (isAdmin) return;
+            isAdmin = true;
+            
+            const adminButtons = document.querySelectorAll('.admin-btn');
+            adminButtons.forEach((btn, index) => {
+                setTimeout(() => {
+                    btn.classList.add('visible');
+                }, index * 50);
+            });
+            
+            const adminIndicator = document.getElementById('adminIndicator');
+            if (adminIndicator) {
+                adminIndicator.classList.add('visible');
+            }
+            
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            
+            startTamperProtection();
+            showToast('👑 欢迎进入管理员模式', 'success');
+        }
+
+        function disableAdminMode() {
+            if (!isAdmin) return;
+            isAdmin = false;
+            
+            const adminButtons = document.querySelectorAll('.admin-btn');
+            adminButtons.forEach((btn, index) => {
+                setTimeout(() => {
+                    btn.classList.remove('visible');
+                }, index * 50);
+            });
+            
+            const adminIndicator = document.getElementById('adminIndicator');
+            if (adminIndicator) {
+                adminIndicator.classList.remove('visible');
+            }
+            
+            selectedSongs = [];
+            if (selectAll) selectAll.checked = false;
+            hideBatchActions();
+            
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            
+            stopTamperProtection();
+            showToast('已切换为普通用户模式', 'info');
+        }
+
+        let tamperProtectionTimer = null;
+
+        function startTamperProtection() {
+            if (tamperProtectionTimer) {
+                clearInterval(tamperProtectionTimer);
+            }
+            
+            tamperProtectionTimer = setInterval(() => {
+                if (!isAdmin) return;
+                
+                const adminButtons = document.querySelectorAll('.admin-btn');
+                adminButtons.forEach(btn => {
+                    if (!btn.classList.contains('visible')) {
+                        btn.classList.add('visible');
+                    }
+                });
+                
+                const adminIndicator = document.getElementById('adminIndicator');
+                if (adminIndicator && !adminIndicator.classList.contains('visible')) {
+                    adminIndicator.classList.add('visible');
+                }
+            }, 1000);
+        }
+
+        function stopTamperProtection() {
+            if (tamperProtectionTimer) {
+                clearInterval(tamperProtectionTimer);
+                tamperProtectionTimer = null;
+            }
+        }
+
+        function requireAdminPermission(callback) {
+            if (!isAdmin) {
+                showToast('❌ 无权限执行此操作，请以管理员身份登录', 'error');
+                return false;
+            }
+            
+            if (typeof callback === 'function') {
+                callback();
+            }
+            return true;
+        }
+
+        let songs = [];
+        const STORAGE_KEY = 'playlist_songs';
+        const UNDO_HISTORY_KEY = 'playlist_undo_history';
+        let undoHistory = [];
+
+        function loadSongsFromStorage() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    const storedSongs = JSON.parse(stored);
+                    songs = storedSongs;
+                } else {
+                    songs = getDefaultSongs();
+                    saveSongsToStorage();
+                }
+            } catch (e) {
+                console.error('Failed to load songs from storage:', e);
+                songs = getDefaultSongs();
+            }
+        }
+
+        function getDefaultSongs() {
+            return [
+{ id: 1, title: 'rain stops, good bye', artist: 'セリユ', theme: '1'},
+{ id: 2, title: '覚醒', artist: '内德维德', theme: '1'},
+{ id: 3, title: '借过一下！', artist: 'Matt吕彦良', theme: '1'},
+{ id: 4, title: '黑洞里', artist: '方大同', theme: '1'},
+{ id: 5, title: '爱我吧', artist: '方大同', theme: '2'},
+{ id: 6, title: '偏爱', artist: '张芸京', theme: '2'},
+{ id: 7, title: '私奔', artist: '郑钧', theme: '1'},
+{ id: 8, title: '爱的箴言', artist: '郑钧', theme: '1'},
+{ id: 9, title: '灰姑娘', artist: '郑钧', theme: '1'},
+{ id: 10, title: '忘年', artist: '张智成', theme: '4'},
+{ id: 11, title: '画', artist: '赵雷', theme: '1'},
+{ id: 12, title: '我记得', artist: '赵雷', theme: '1'},
+{ id: 13, title: '爱我别走', artist: '张震岳', theme: '1'},
+{ id: 14, title: '再见', artist: '张震岳', theme: '3'},
+{ id: 15, title: '小宇', artist: '张震岳', theme: '1'},
+{ id: 16, title: '爱的初体验', artist: '张震岳', theme: '1'},
+{ id: 17, title: '恋人', artist: '李荣浩', theme: '1'},
+{ id: 18, title: '喜剧之王', artist: '李荣浩', theme: '2'},
+{ id: 19, title: '不将就', artist: '李荣浩', theme: '2'},
+{ id: 20, title: '模特', artist: '李荣浩', theme: '1'},
+{ id: 21, title: '不遗憾', artist: '李荣浩', theme: '1'},
+{ id: 22, title: '名字', artist: '李荣浩', theme: '4'},
+{ id: 23, title: '李白', artist: '李荣浩', theme: '1'},
+{ id: 24, title: '耳朵', artist: '李荣浩', theme: '2'},
+{ id: 25, title: '一百', artist: '李荣浩', theme: '3'},
+{ id: 26, title: '麻雀', artist: '李荣浩', theme: '1'},
+{ id: 27, title: '年少有为', artist: '李荣浩', theme: '1'},
+{ id: 28, title: '不说', artist: '李荣浩', theme: '1'},
+{ id: 29, title: '戒烟', artist: '李荣浩', theme: '1'},
+{ id: 30, title: '乌梅子酱', artist: '李荣浩', theme: '3'},
+{ id: 31, title: '老伴', artist: '李荣浩', theme: '1'},
+{ id: 32, title: '作曲家', artist: '李荣浩', theme: '1'},
+{ id: 33, title: '不搭', artist: '李荣浩', theme: '1'},
+{ id: 34, title: '慢慢喜欢你', artist: '莫文蔚', theme: '4'},
+{ id: 35, title: '拥有', artist: '李泉', theme: '1'},
+{ id: 36, title: '拿走了什么', artist: '陈其楠', theme: '1'},
+{ id: 37, title: '拿走了什么', artist: 'A-Lin', theme: '1'},
+{ id: 38, title: '火烧的寂寞', artist: '苏见信 (信)', theme: '1'},
+{ id: 39, title: '爱你3000', artist: '潘玮柏', theme: '1'},
+{ id: 40, title: '爱你3000', artist: '潘玮柏', theme: '1'},
+{ id: 41, title: '反转地球', artist: '潘玮柏', theme: '1'},
+{ id: 42, title: '壁虎漫步', artist: '潘玮柏', theme: '3'},
+{ id: 43, title: 'Wu Ha', artist: '潘玮柏', theme: '1'},
+{ id: 44, title: '梅雨季', artist: '潘玮柏', theme: '1'},
+{ id: 45, title: '我让你走了', artist: '潘玮柏', theme: '1'},
+{ id: 46, title: '爱上未来的你', artist: '潘玮柏', theme: '1'},
+{ id: 47, title: '我让你走了', artist: '潘玮柏', theme: '1'},
+{ id: 48, title: 'Tell Me', artist: '潘玮柏', theme: '4'},
+{ id: 49, title: '我不怕', artist: '潘玮柏', theme: '1'},
+{ id: 50, title: '当爱已成往事', artist: '李宗盛', theme: '3'}
+            ];
+        }
+
+        function saveSongsToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+            } catch (e) {
+                console.error('Failed to save songs to storage:', e);
+            }
+        }
+
+        function loadUndoHistory() {
+            try {
+                const stored = localStorage.getItem(UNDO_HISTORY_KEY);
+                if (stored) {
+                    undoHistory = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error('Failed to load undo history:', e);
+                undoHistory = [];
+            }
+        }
+
+        function saveUndoHistory() {
+            try {
+                localStorage.setItem(UNDO_HISTORY_KEY, JSON.stringify(undoHistory));
+            } catch (e) {
+                console.error('Failed to save undo history:', e);
+            }
+        }
+
+        function addUndoAction(actionType, data) {
+            const action = {
+                id: Date.now(),
+                type: actionType,
+                timestamp: new Date().toISOString(),
+                data: data
+            };
+            undoHistory.push(action);
+            if (undoHistory.length > 50) {
+                undoHistory.shift();
+            }
+            saveUndoHistory();
+            updateUndoButton();
+        }
+
+        function undo() {
+            if (undoHistory.length === 0) {
+                showToast('没有可撤销的操作', 'info');
+                return;
+            }
+
+            const lastAction = undoHistory.pop();
+            saveUndoHistory();
+            updateUndoButton();
+
+            try {
+                if (lastAction.type === 'delete') {
+                    songs.splice(lastAction.data.index, 0, lastAction.data.song);
+                    saveSongsToStorage();
+                    updateStats();
+                    renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+                    showToast(`已撤销删除：${lastAction.data.song.title}`, 'success');
+                } else if (lastAction.type === 'add') {
+                    const index = songs.findIndex(s => s.id === lastAction.data.song.id);
+                    if (index > -1) {
+                        songs.splice(index, 1);
+                        saveSongsToStorage();
+                        updateStats();
+                        renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+                        showToast(`已撤销添加：${lastAction.data.song.title}`, 'success');
+                    }
+                } else if (lastAction.type === 'batchDelete') {
+                    lastAction.data.songs.forEach((song, i) => {
+                        songs.splice(lastAction.data.startIndex + i, 0, song);
+                    });
+                    saveSongsToStorage();
+                    updateStats();
+                    renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+                    showToast(`已撤销删除 ${lastAction.data.songs.length} 首歌曲`, 'success');
+                }
+            } catch (e) {
+                console.error('Undo failed:', e);
+                showToast('撤销操作失败', 'error');
+            }
+        }
+
+        function updateUndoButton() {
+            const undoBtn = document.getElementById('undoBtn');
+            if (undoBtn) {
+                undoBtn.style.display = undoHistory.length > 0 && isAdmin ? 'inline-flex' : 'none';
+            }
+        }
+
+        function hideBatchActions() {
+            if (batchActions) {
+                batchActions.style.display = 'none';
+            }
+        }
+        
+        function showBatchActions() {
+            if (batchActions) {
+                batchActions.style.display = 'flex';
+            }
+        }
+
+        const searchInput = document.getElementById('searchInput');
+        const artistFilter = document.getElementById('artistFilter');
+        const playlistContainer = document.getElementById('playlistContainer');
+        const songCount = document.getElementById('songCount');
+        const displayCount = document.getElementById('displayCount');
+        const randomBtn = document.getElementById('randomBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const addBtn = document.getElementById('addBtn');
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        const batchActions = document.getElementById('batchActions');
+        const selectAll = document.getElementById('selectAll');
+        const selectedCount = document.getElementById('selectedCount');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const toast = document.getElementById('toast');
+        const addModal = document.getElementById('addModal');
+        const newTitle = document.getElementById('newTitle');
+        const newArtist = document.getElementById('newArtist');
+        const titleError = document.getElementById('titleError');
+        const artistError = document.getElementById('artistError');
+        const cancelAddBtn = document.getElementById('cancelAddBtn');
+        const confirmAddBtn = document.getElementById('confirmAddBtn');
+
+        let selectedSongs = [];
+        let currentFilter = { keyword: '', theme: '', artist: '' };
+        let lastHighlightedId = null;
+        let lastRandomIndex = -1;
+
+        function cleanArtistWhitespace() {
+            songs.forEach(song => {
+                if (typeof song.artist === 'string') {
+                    song.artist = song.artist.trim().replace(/\s+/g, ' ');
+                }
+            });
+        }
+
+        function initArtistFilter(theme = '') {
+            const filteredSongs = theme ? songs.filter(song => song.theme === theme) : songs;
+            const artists = [...new Set(filteredSongs.map(song => song.artist))].sort();
+            artistFilter.innerHTML = '<option value="">全部歌手</option>';
+            artists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist;
+                option.textContent = artist;
+                artistFilter.appendChild(option);
+            });
+        }
+
+        function filterSongs(keyword = '', theme = '', artist = '') {
+            const lowerKeyword = keyword ? keyword.toLowerCase() : '';
+            
+            return songs.filter(song => {
+                if (theme && song.theme !== theme) {
+                    return false;
+                }
+                
+                if (artist && song.artist !== artist) {
+                    return false;
+                }
+                
+                if (!lowerKeyword) {
+                    return true;
+                }
+                
+                return song.title.toLowerCase().includes(lowerKeyword) || 
+                       song.artist.toLowerCase().includes(lowerKeyword);
+            });
+        }
+
+        function renderPlaylist(filteredSongs) {
+            playlistContainer.innerHTML = '';
+
+            if (filteredSongs.length === 0) {
+                playlistContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h3>🎵 暂无歌曲</h3>
+                        <p>没有找到符合条件的歌曲，试试其他筛选条件吧</p>
+                    </div>
+                `;
+                displayCount.textContent = '0';
+                return;
+            }
+
+            filteredSongs.forEach(song => {
+                const isSelected = selectedSongs.includes(song.id);
+                const isHighlighted = lastHighlightedId === song.id;
+                
+                const card = document.createElement('div');
+                card.className = `song-card${isSelected ? ' selected' : ''}${isHighlighted ? ' highlight' : ''}`;
+                card.dataset.id = song.id;
+
+                const checkboxHtml = isAdmin ? `<input type="checkbox" class="song-checkbox" ${isSelected ? 'checked' : ''}>` : '';
+                const deleteBtnHtml = isAdmin ? `<button class="btn-delete" onclick="deleteSong(${song.id})">删除</button>` : '';
+
+                card.innerHTML = `
+                    ${checkboxHtml}
+                    <div class="song-info">
+                        <span class="song-title">${escapeHtml(song.title)}</span>
+                        <span class="song-artist">${escapeHtml(song.artist)}</span>
+                    </div>
+                    <div class="song-actions">
+                        <button class="btn-request" onclick="requestSong(${song.id})">点歌</button>
+                        ${deleteBtnHtml}
+                    </div>
+                `;
+
+                if (isAdmin) {
+                    const checkbox = card.querySelector('.song-checkbox');
+                    checkbox.addEventListener('change', () => {
+                        toggleSongSelection(song.id);
+                    });
+                }
+
+                playlistContainer.appendChild(card);
+            });
+
+            displayCount.textContent = filteredSongs.length;
+        }
+
+        function escapeHtml(text) {
+            if (typeof text !== 'string') {
+                return '';
+            }
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function secureCompare(a, b) {
+            if (a.length !== b.length) {
+                return false;
+            }
+            let result = 0;
+            for (let i = 0; i < a.length; i++) {
+                result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+            }
+            return result === 0;
+        }
+
+        function toggleSongSelection(songId) {
+            const index = selectedSongs.indexOf(songId);
+            if (index > -1) {
+                selectedSongs.splice(index, 1);
+            } else {
+                selectedSongs.push(songId);
+            }
+            updateSelectedCount();
+            
+            const card = document.querySelector(`.song-card[data-id="${songId}"]`);
+            if (card) {
+                const isSelected = selectedSongs.includes(songId);
+                card.classList.toggle('selected', isSelected);
+                const checkbox = card.querySelector('.song-checkbox');
+                if (checkbox) {
+                    checkbox.checked = isSelected;
+                }
+            }
+        }
+
+        function updateSelectedCount() {
+            selectedCount.textContent = selectedSongs.length;
+        }
+
+        function updateCardSelection() {
+            const cards = document.querySelectorAll('.song-card');
+            const selectedSet = new Set(selectedSongs);
+            
+            cards.forEach(card => {
+                const id = parseInt(card.dataset.id, 10);
+                const isSelected = selectedSet.has(id);
+                
+                if (isSelected) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+                
+                const checkbox = card.querySelector('.song-checkbox');
+                if (checkbox) {
+                    checkbox.checked = isSelected;
+                }
+            });
+        }
+
+        function toggleSelectAll() {
+            const filteredSongs = filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist);
+            
+            if (selectAll.checked) {
+                selectedSongs = filteredSongs.map(song => song.id);
+            } else {
+                selectedSongs = [];
+            }
+            
+            updateSelectedCount();
+            updateCardSelection();
+        }
+
+        function requestSong(songId) {
+            const song = songs.find(s => s.id === songId);
+            if (song) {
+                const text = `🎵 点歌：${song.title} - ${song.artist}`;
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast(`已复制点歌信息：${song.title}`, 'success');
+                }).catch(() => {
+                    showToast(`点歌：${song.title}`, 'info');
+                });
+                
+                lastHighlightedId = songId;
+                renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+                
+                setTimeout(() => {
+                    if (lastHighlightedId === songId) {
+                        lastHighlightedId = null;
+                        renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+                    }
+                }, 3000);
+            }
+        }
+
+        function deleteSong(songId) {
+            if (!requireAdminPermission()) return;
+            
+            if (!confirm('确定要删除这首歌曲吗？')) {
+                return;
+            }
+
+            const index = songs.findIndex(s => s.id === songId);
+            if (index > -1) {
+                const song = { ...songs[index] };
+                
+                addUndoAction('delete', {
+                    song: song,
+                    index: index
+                });
+                
+                songs.splice(index, 1);
+                
+                const selectIndex = selectedSongs.indexOf(songId);
+                if (selectIndex > -1) {
+                    selectedSongs.splice(selectIndex, 1);
+                }
+                
+                saveSongsToStorage();
+                showToast(`已删除歌曲：${song.title}`, 'success');
+                updateStats();
+                renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            }
+        }
+
+        function batchDeleteSongs() {
+            if (!requireAdminPermission()) return;
+            
+            if (selectedSongs.length === 0) {
+                showToast('请先选择要删除的歌曲', 'error');
+                return;
+            }
+
+            if (!confirm(`确定要删除选中的 ${selectedSongs.length} 首歌曲吗？`)) {
+                return;
+            }
+
+            const deletedSongs = [];
+            let minIndex = songs.length;
+            
+            selectedSongs.forEach(id => {
+                const index = songs.findIndex(s => s.id === id);
+                if (index > -1) {
+                    deletedSongs.push({ ...songs[index] });
+                    if (index < minIndex) {
+                        minIndex = index;
+                    }
+                }
+            });
+            
+            addUndoAction('batchDelete', {
+                songs: deletedSongs,
+                startIndex: minIndex
+            });
+
+            selectedSongs.sort((a, b) => b - a);
+            
+            selectedSongs.forEach(id => {
+                const index = songs.findIndex(s => s.id === id);
+                if (index > -1) {
+                    songs.splice(index, 1);
+                }
+            });
+            
+            selectedSongs = [];
+            selectAll.checked = false;
+            batchActions.style.display = 'none';
+            
+            saveSongsToStorage();
+            showToast(`已成功删除 ${deletedSongs.length} 首歌曲`, 'success');
+            updateStats();
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+        }
+
+        function updateStats() {
+            songCount.textContent = songs.length;
+        }
+
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = `toast toast-${type} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function clearFilters() {
+            searchInput.value = '';
+            artistFilter.value = '';
+            currentFilter = { keyword: '', artist: '' };
+            renderPlaylist(filterSongs());
+            showToast('筛选条件已重置', 'info');
+        }
+
+        function randomSong() {
+            const filteredSongs = filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist);
+            if (filteredSongs.length === 0) {
+                showToast('当前筛选结果为空', 'error');
+                return;
+            }
+            
+            let randomIndex;
+            if (filteredSongs.length > 1) {
+                do {
+                    randomIndex = Math.floor(Math.random() * filteredSongs.length);
+                } while (randomIndex === lastRandomIndex && filteredSongs.length > 1);
+            } else {
+                randomIndex = 0;
+            }
+            lastRandomIndex = randomIndex;
+            
+            const song = filteredSongs[randomIndex];
+            requestSong(song.id);
+        }
+
+        function validateForm() {
+            let isValid = true;
+            
+            if (!newTitle.value.trim() || newTitle.value.length > 100) {
+                newTitle.classList.add('error');
+                titleError.classList.add('show');
+                isValid = false;
+            } else {
+                newTitle.classList.remove('error');
+                titleError.classList.remove('show');
+            }
+            
+            if (!newArtist.value.trim() || newArtist.value.length > 100) {
+                newArtist.classList.add('error');
+                artistError.classList.add('show');
+                isValid = false;
+            } else {
+                newArtist.classList.remove('error');
+                artistError.classList.remove('show');
+            }
+            
+            return isValid;
+        }
+
+        function addSong() {
+            if (!validateForm()) {
+                return;
+            }
+
+            const newId = Math.max(...songs.map(s => s.id), 0) + 1;
+            const song = {
+                id: newId,
+                title: newTitle.value.trim(),
+                artist: newArtist.value.trim()
+            };
+            
+            addUndoAction('add', {
+                song: song
+            });
+            
+            songs.push(song);
+            
+            saveSongsToStorage();
+            
+            newTitle.value = '';
+            newArtist.value = '';
+            addModal.classList.remove('show');
+            
+            showToast(`已添加歌曲：${song.title}`, 'success');
+            updateStats();
+            
+            const filtered = filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist);
+            if (filtered.some(s => s.id === newId)) {
+                renderPlaylist(filtered);
+            } else {
+                renderPlaylist(filtered);
+            }
+            
+            initArtistFilter(currentFilter.theme);
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            currentFilter.keyword = e.target.value;
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+        });
+
+        artistFilter.addEventListener('change', (e) => {
+            currentFilter.artist = e.target.value;
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+        });
+
+        randomBtn.addEventListener('click', randomSong);
+        clearBtn.addEventListener('click', clearFilters);
+        
+        addBtn.addEventListener('click', () => {
+            if (!requireAdminPermission()) return;
+            addModal.classList.add('show');
+        });
+        
+        batchDeleteBtn.addEventListener('click', () => {
+            if (!requireAdminPermission()) return;
+            batchActions.style.display = batchActions.style.display === 'none' ? 'flex' : 'none';
+            if (batchActions.style.display === 'none') {
+                selectedSongs = [];
+                selectAll.checked = false;
+                updateSelectedCount();
+                updateCardSelection();
+            }
+        });
+
+        selectAll.addEventListener('change', toggleSelectAll);
+        confirmDeleteBtn.addEventListener('click', batchDeleteSongs);
+
+        cancelAddBtn.addEventListener('click', () => {
+            addModal.classList.remove('show');
+            newTitle.value = '';
+            newArtist.value = '';
+            newTitle.classList.remove('error');
+            newArtist.classList.remove('error');
+            titleError.classList.remove('show');
+            artistError.classList.remove('show');
+        });
+
+        confirmAddBtn.addEventListener('click', addSong);
+
+        addModal.addEventListener('click', (e) => {
+            if (e.target === addModal) {
+                cancelAddBtn.click();
+            }
+        });
+
+
+
+        loadSongsFromStorage();
+        loadUndoHistory();
+        cleanArtistWhitespace();
+        initArtistFilter();
+        updateStats();
+        renderPlaylist(songs);
+
+        const undoBtn = document.getElementById('undoBtn');
+        if (undoBtn) {
+            undoBtn.addEventListener('click', undo);
+        }
+
+        const loginBtn = document.getElementById('loginBtn');
+        const passwordModal = document.getElementById('passwordModal');
+        const passwordInput = document.getElementById('passwordInput');
+        const passwordError = document.getElementById('passwordError');
+        const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
+        const confirmPasswordBtn = document.getElementById('confirmPasswordBtn');
+
+        loginBtn.addEventListener('click', () => {
+            if (isAdmin) {
+                if (confirm('确定要退出管理员模式吗？')) {
+                    logoutAdmin();
+                }
+            } else {
+                passwordModal.classList.add('show');
+                passwordInput.value = '';
+                passwordInput.classList.remove('error');
+                passwordError.classList.remove('show');
+                passwordInput.focus();
+            }
+        });
+
+        cancelPasswordBtn.addEventListener('click', () => {
+            passwordModal.classList.remove('show');
+            passwordInput.value = '';
+            passwordInput.classList.remove('error');
+            passwordError.classList.remove('show');
+        });
+
+        passwordModal.addEventListener('click', (e) => {
+            if (e.target === passwordModal) {
+                cancelPasswordBtn.click();
+            }
+        });
+
+        confirmPasswordBtn.addEventListener('click', () => {
+            const password = passwordInput.value.trim();
+            
+            if (!password) {
+                passwordInput.classList.add('error');
+                passwordError.textContent = '请输入密码';
+                passwordError.classList.add('show');
+                return;
+            }
+
+            if (password === ADMIN_PASSWORD) {
+                loginAdmin();
+            } else {
+                passwordInput.classList.add('error');
+                passwordError.textContent = '密码错误，请重试';
+                passwordError.classList.add('show');
+                passwordInput.value = '';
+                passwordInput.focus();
+            }
+        });
+
+        passwordInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                confirmPasswordBtn.click();
+            }
+        });
+
+        function loginAdmin() {
+            isAdmin = true;
+            passwordModal.classList.remove('show');
+            passwordInput.value = '';
+            loginBtn.classList.add('admin-mode');
+            loginBtn.title = '点击退出管理员模式';
+            
+            document.querySelectorAll('.admin-btn').forEach(btn => {
+                btn.style.display = 'inline-flex';
+            });
+            
+            updateUndoButton();
+            adminIndicator.style.display = 'flex';
+            
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            
+            showToast('👑 已进入管理员模式', 'success');
+        }
+
+        function logoutAdmin() {
+            isAdmin = false;
+            loginBtn.classList.remove('admin-mode');
+            loginBtn.title = '管理员登录';
+            
+            document.querySelectorAll('.admin-btn').forEach(btn => {
+                btn.style.display = 'none';
+            });
+            
+            adminIndicator.style.display = 'none';
+            batchActions.style.display = 'none';
+            selectedSongs = [];
+            selectAll.checked = false;
+            updateSelectedCount();
+            
+            renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            
+            showToast('已退出管理员模式', 'info');
+        }
+
+        logoutBtn.addEventListener('click', logoutAdmin);
+
+        const themeToggle = document.getElementById('themeToggle');
+        const themeModes = [
+            { id: 'dark', label: '🤘 摇滚、奔放主题', icon: '🤘', themeValue: '1' },
+            { id: 'theme-dreamy', label: '✨ 梦幻、二次元主题', icon: '✨', themeValue: '2' },
+            { id: 'theme-pop', label: '🎵 流行、温情主题', icon: '🎵', themeValue: '3' },
+            { id: 'theme-emo', label: '🌊 emo、虚无主题', icon: '🌊', themeValue: '4' }
+        ];
+        let currentThemeIndex = 0;
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                const index = themeModes.findIndex(m => m.id === savedTheme);
+                if (index !== -1) {
+                    currentThemeIndex = index;
+                    applyTheme(savedTheme);
+                    return;
+                }
+            }
+            applyTheme('dark');
+        }
+
+        function applyTheme(themeId) {
+            themeModes.forEach(mode => {
+                document.documentElement.classList.remove(mode.id);
+            });
+            document.documentElement.classList.add(themeId);
+            
+            const mode = themeModes.find(m => m.id === themeId);
+            if (mode) {
+                themeToggle.textContent = mode.icon;
+                themeToggle.title = mode.label;
+                
+                currentFilter.theme = mode.themeValue;
+                currentFilter.artist = '';
+                artistFilter.value = '';
+                initArtistFilter(currentFilter.theme);
+                renderPlaylist(filterSongs(currentFilter.keyword, currentFilter.theme, currentFilter.artist));
+            }
+            localStorage.setItem('theme', themeId);
+        }
+
+        function toggleTheme() {
+            currentThemeIndex = (currentThemeIndex + 1) % themeModes.length;
+            applyTheme(themeModes[currentThemeIndex].id);
+        }
+
+        themeToggle.addEventListener('click', toggleTheme);
+
+        initTheme();
+    </script>
+</body>
+</html>
